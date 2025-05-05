@@ -23,12 +23,12 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
     if (!message.guild || message.author.bot) return;
 
-    
-    if (message.author.id !== ownerID) {
-        return message.reply('Bu botu yalnızca sahibi kullanabilir!');
+  
+    if (message.content.startsWith('!') && message.author.id !== ownerID) {
+        return message.reply('Bu komutu kullanma yetkiniz yok!');
     }
 
-    
+  
     if (message.content.startsWith('!dm')) {
         const args = message.content.split(' ').slice(1);
         const mention = message.mentions.users.first();
@@ -44,20 +44,28 @@ client.on('messageCreate', async (message) => {
         failLog = [];
 
         let count = 0;
+        const promises = [];
+
         for (const [id, member] of members) {
             if (!member.user.bot) {
                 if (mention && member.user.id !== mention.id) continue;
                 if (limit && count >= limit) break;
 
-                try {
-                    await member.send(dmMessage);
-                    successLog.push(member.user.tag);
-                    count++;
-                } catch {
-                    failLog.push(member.user.tag);
-                }
+                promises.push(
+                    member.send(dmMessage)
+                        .then(() => {
+                            successLog.push(member.user.tag);
+                            count++;
+                        })
+                        .catch(() => {
+                            failLog.push(member.user.tag);
+                        })
+                );
             }
         }
+
+       
+        await Promise.all(promises);
 
         const logMessage = `\n=== ${new Date().toLocaleString()} ===\nBaşarılı:\n${successLog.join('\n')}\nBaşarısız:\n${failLog.join('\n')}\n`;
 
@@ -74,23 +82,31 @@ client.on('messageCreate', async (message) => {
         const dmMessage = args.join(' ');
 
         if (!dmMessage) {
-            return message.reply('Herkese göndermek istediğiniz mesajı yazmalısınız! Örnek: `!herkeseks Merhaba arkadaşlar!`');
+            return message.reply('Herkese göndermek istediğiniz mesajı yazmalısınız! Örnek: `!herkeseks Zypheris`');
         }
 
         const members = await message.guild.members.fetch();
         successLog = [];
         failLog = [];
 
+        const promises = [];
+
         for (const [id, member] of members) {
             if (!member.user.bot) {
-                try {
-                    await member.send(dmMessage);
-                    successLog.push(member.user.tag);
-                } catch {
-                    failLog.push(member.user.tag);
-                }
+                promises.push(
+                    member.send(dmMessage)
+                        .then(() => {
+                            successLog.push(member.user.tag);
+                        })
+                        .catch(() => {
+                            failLog.push(member.user.tag);
+                        })
+                );
             }
         }
+
+        
+        await Promise.all(promises);
 
         const logMessage = `\n=== ${new Date().toLocaleString()} ===\nBaşarılı:\n${successLog.join('\n')}\nBaşarısız:\n${failLog.join('\n')}\n`;
 
@@ -101,7 +117,7 @@ client.on('messageCreate', async (message) => {
         message.channel.send(`Mesaj gönderimi tamamlandı!\nBaşarılı: ${successLog.length}\nBaşarısız: ${failLog.length}`);
     }
 
-    // İstatistik Komutu
+  
     if (message.content.startsWith('!istatistik')) {
         const istatistikMesajı = `**Mesaj İstatistikleri:**\n\n` +
             `🔹 Başarılı Gönderimler: ${successLog.length}\n` +
@@ -111,7 +127,7 @@ client.on('messageCreate', async (message) => {
         message.channel.send(istatistikMesajı);
     }
 
-   
+    
     if (message.content.startsWith('!setavatar')) {
         const args = message.content.split(' ').slice(1);
         const imageURL = args[0];
@@ -128,7 +144,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-   
+    
     if (message.content.startsWith('!setusername')) {
         const args = message.content.split(' ').slice(1);
         const newUsername = args.join(' ');
@@ -145,7 +161,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    
+    // Durum Ayarlama Komutu
     if (message.content.startsWith('!setstatus')) {
         const args = message.content.split(' ').slice(1);
         const statusType = args[0].toLowerCase();
@@ -196,7 +212,7 @@ client.on('messageCreate', async (message) => {
                 },
                 {
                     name: '!herkeseks',
-                    value: 'Herkese DM göndermenizi sağlar. Örnek: `!herkeseks Merhaba!`',
+                    value: 'Herkese DM göndermenizi sağlar. Örnek: `!herkeseks Merhaba arkadaşlar!`',
                 },
                 {
                     name: '!istatistik',
@@ -221,6 +237,41 @@ client.on('messageCreate', async (message) => {
         };
 
         message.channel.send({ embeds: [helpEmbed] });
+    }
+
+   // hacım bu naruto komutu seçtiğin kişiye dm ine spam yapıyor şu şekil !naruto @zypheris naber - bu naber mesajını 50 kere tekrarlıcak 1 kere gönderdi tekrar göndericek
+// o şekilde 50 kere tekrarlıyor bunu nasıl kısarım veya artırırım derseniz şuan da 258 satırdaki if ( count < 50 ) yazan yerin içindeki 50 tekrarlama döngüsünün sayısı işte onu 100 yaparsanız 100 kere atar 10 yaparsan 10 kere atar
+    if (message.content.startsWith('!naruto')) {
+        const args = message.content.split(' ').slice(1);
+        const mention = message.mentions.users.first();
+        const narutoMessage = args.slice(1).join(' ');
+
+        
+        if (!mention || !narutoMessage) {
+            return message.reply('Etiketlediğiniz kullanıcıyı ve mesajı belirtmelisiniz! Örnek: `!naruto @Kullanıcı Mesajınız`');
+        }
+
+        
+        try {
+            let count = 0;
+            const repeatMessage = async () => {
+                if (count < 50) {
+                    try {
+                        await mention.send(narutoMessage);  
+                        count++;
+                        setTimeout(repeatMessage, 1000);
+                    } catch (error) {
+                        console.error('Mesaj gönderilirken bir hata oluştu:', error);
+                    }
+                }
+            };
+
+            repeatMessage(); 
+            message.channel.send(`${mention.tag} adlı kullanıcıya mesaj başarıyla gönderilmeye başlandı!`);
+        } catch (err) {
+            console.error('Mesaj gönderme hatası:', err);
+            message.channel.send('Mesaj gönderilirken bir hata oluştu!');
+        }
     }
 });
 
