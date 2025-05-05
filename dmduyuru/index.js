@@ -36,7 +36,7 @@ client.on('messageCreate', async (message) => {
         const dmMessage = args.filter(arg => isNaN(arg) && !arg.startsWith('<@')).join(' ');
 
         if (!dmMessage) {
-            return message.reply('Göndermek istediğiniz mesajı yazmalısınız! Örnek: `!dm @Kullanıcı Merhaba!` veya `!dm 20 Merhaba!`');
+            return message.reply('Göndermek istediğiniz mesajı yazmalısınız! Örnek: `!dm @Kullanıcı zypherisin selamı var!`');
         }
 
         const members = await message.guild.members.fetch();
@@ -161,7 +161,7 @@ client.on('messageCreate', async (message) => {
         }
     }
 
-    // Durum Ayarlama Komutu
+ 
     if (message.content.startsWith('!setstatus')) {
         const args = message.content.split(' ').slice(1);
         const statusType = args[0].toLowerCase();
