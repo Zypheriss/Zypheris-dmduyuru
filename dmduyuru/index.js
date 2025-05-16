@@ -16,7 +16,7 @@ const cooldowns = new Map();
 let successLog = [];
 let failLog = [];
 
-const handleRateLimit = async (func, delay = 850) => {
+const handleRateLimit = async (func, delay = 1300) => {
     await new Promise(resolve => setTimeout(resolve, delay));
     return func();
 };
