@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits } = require('discord.js');
 const fs = require('fs');
 const { token, logFile, ownerID } = require('./config.json');
 
@@ -12,17 +12,31 @@ const client = new Client({
     ]
 });
 
-const cooldowns = new Map();
 let successLog = [];
 let failLog = [];
+let rateLimitDelay = 2500;
 
-const handleRateLimit = async (func, delay = 1300) => {
-    await new Promise(resolve => setTimeout(resolve, delay));
-    return func();
+const handleRateLimit = async (func, retries = 3) => {
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            await new Promise(resolve => setTimeout(resolve, rateLimitDelay));
+            return await func();
+        } catch (error) {
+            if (error.message.includes('rate limit')) {
+                console.log(`Rate limit algılandı. ${attempt}. deneme yapılıyor...`);
+                rateLimitDelay += 500;
+            } else if (error.code === 50007) {
+                throw new Error('DM Kapalı');
+            } else {
+                throw error;
+            }
+        }
+    }
+    throw new Error('Rate limit denemeleri başarısız oldu.');
 };
 
 client.once('ready', () => {
-    console.log(`${client.user.tag} giriş yaptım hacı`);
+    console.log(`${client.user.tag} giriş yaptı!`);
 });
 
 client.on('messageCreate', async (message) => {
@@ -35,10 +49,10 @@ client.on('messageCreate', async (message) => {
         return message.reply('Bu komutu kullanma yetkiniz yok!');
     }
 
-    if (command === '!dm') {
-        const mention = message.mentions.users.first();
-        const limit = parseInt(args.find(arg => !isNaN(arg)), 10);
-        const dmMessage = args.filter(arg => isNaN(arg) && !arg.startsWith('<@')).join(' ');
+    if (command === '!dm' || command === '!herkeseks') {
+        const dmMessage = command === '!dm' 
+            ? args.filter(arg => isNaN(arg) && !arg.startsWith('<@')).join(' ')
+            : args.join(' ');
 
         if (!dmMessage) {
             return message.reply('Göndermek istediğiniz mesajı yazmalısınız!');
@@ -47,56 +61,21 @@ client.on('messageCreate', async (message) => {
         const members = await message.guild.members.fetch();
         successLog = [];
         failLog = [];
+        let limit = parseInt(args.find(arg => !isNaN(arg)), 10) || members.size;
         let count = 0;
 
         for (const [, member] of members) {
             if (!member.user.bot) {
-                if (mention && member.user.id !== mention.id) continue;
                 if (limit && count >= limit) break;
 
-                await handleRateLimit(() =>
-                    member.send(dmMessage)
-                        .then(() => {
-                            successLog.push(member.user.tag);
-                            count++;
-                        })
-                        .catch(() => {
-                            failLog.push(member.user.tag);
-                        })
-                );
-            }
-        }
-
-        const logMessage = `\n=== ${new Date().toLocaleString()} ===\nBaşarılı:\n${successLog.join('\n')}\nBaşarısız:\n${failLog.join('\n')}\n`;
-        fs.appendFile(logFile, logMessage, err => {
-            if (err) console.error('Log dosyasına yazılamadı:', err);
-        });
-
-        message.channel.send(`Mesaj gönderimi tamamlandı!\nBaşarılı: ${successLog.length}\nBaşarısız: ${failLog.length}`);
-    }
-
-    if (command === '!herkeseks') {
-        const dmMessage = args.join(' ');
-
-        if (!dmMessage) {
-            return message.reply('Herkese göndermek istediğiniz mesajı yazmalısınız!');
-        }
-
-        const members = await message.guild.members.fetch();
-        successLog = [];
-        failLog = [];
-
-        for (const [, member] of members) {
-            if (!member.user.bot) {
-                await handleRateLimit(() =>
-                    member.send(dmMessage)
-                        .then(() => {
-                            successLog.push(member.user.tag);
-                        })
-                        .catch(() => {
-                            failLog.push(member.user.tag);
-                        })
-                );
+                try {
+                    await handleRateLimit(() => member.send(dmMessage), 5);
+                    successLog.push(member.user.tag);
+                    count++;
+                } catch (error) {
+                    const reason = error.message || 'Bilinmeyen hata';
+                    failLog.push(`${member.user.tag} (${reason})`);
+                }
             }
         }
 
@@ -109,16 +88,12 @@ client.on('messageCreate', async (message) => {
     }
 
     if (command === '!istatistik') {
-        const istatistikMesajı = `**Mesaj İstatistikleri:**\n\n Başarılı Gönderimler: ${successLog.length}\n Başarısız Gönderimler: ${failLog.length}\n\n**Başarısız Kullanıcılar:**\n${failLog.length > 0 ? failLog.join('\n') : 'Yok'}`;
+        const istatistikMesajı = `**Mesaj İstatistikleri:**\n\nBaşarılı Gönderimler: ${successLog.length}\nBaşarısız Gönderimler: ${failLog.length}\n\n**Başarısız Kullanıcılar:**\n${failLog.length > 0 ? failLog.join('\n') : 'Yok'}`;
         message.channel.send(istatistikMesajı);
     }
-
     if (command === '!setavatar') {
         const imageURL = args[0];
-
-        if (!imageURL) {
-            return message.reply('Profil resmi URL’sini belirtmelisiniz!');
-        }
+        if (!imageURL) return message.reply('Profil resmi URL’sini belirtmelisiniz!');
 
         try {
             await client.user.setAvatar(imageURL);
@@ -130,10 +105,7 @@ client.on('messageCreate', async (message) => {
 
     if (command === '!setusername') {
         const newUsername = args.join(' ');
-
-        if (!newUsername) {
-            return message.reply('Yeni kullanıcı adını belirtmelisiniz!');
-        }
+        if (!newUsername) return message.reply('Yeni kullanıcı adını belirtmelisiniz!');
 
         try {
             await client.user.setUsername(newUsername);
@@ -148,7 +120,7 @@ client.on('messageCreate', async (message) => {
         const statusMessage = args.slice(1).join(' ');
 
         if (!statusType || !statusMessage) {
-            return message.reply('durum türü ile mesajını belirtsene oğlum');
+            return message.reply('Durum türü ile mesajını belirtmelisiniz!');
         }
 
         let activity;
@@ -175,10 +147,13 @@ client.on('messageCreate', async (message) => {
                 return message.reply('Geçersiz durum türü');
         }
 
-        await client.user.setActivity(activity);
-        message.channel.send(`Durum başarıyla "${statusType}" olarak değiştirildi: ${statusMessage}`);
+        try {
+            await client.user.setActivity(activity);
+            message.channel.send(`Durum başarıyla "${statusType}" olarak değiştirildi: ${statusMessage}`);
+        } catch (err) {
+            message.channel.send('Durum ayarlanırken bir hata oluştu: ' + err.message);
+        }
     }
-
     if (command === '!yardım') {
         const helpEmbed = {
             color: 0x0099ff,
@@ -192,7 +167,7 @@ client.on('messageCreate', async (message) => {
                 { name: '!setusername', value: 'Botun kullanıcı adını değiştir.' },
                 { name: '!setstatus', value: 'Botun durumunu değiştir.' },
             ],
-            footer: { text: 'Daha fazla yardım için zypheris e  yaz.' },
+            footer: { text: 'Daha fazla yardım için zypheris e yaz.' },
         };
 
         message.channel.send({ embeds: [helpEmbed] });
